@@ -1,8 +1,6 @@
-import SupplierProductMatrix from './components/SupplierProductMatrix'
-import './App.css'
+import SupplierProductMatrix from './components/SupplierProductMatrix';
 
 function App() {
-
   return (
     <div>
       <SupplierProductMatrix />
