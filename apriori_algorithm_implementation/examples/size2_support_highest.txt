@@ -1,0 +1,8 @@
+pep_NO married_YES (40.3333)
+pep_NO current_act_YES (40.6667)
+mortgage_NO married_YES (43.5)
+mortgage_NO save_act_YES (45)
+mortgage_NO current_act_YES (50.1667)
+married_YES save_act_YES (46.1667)
+married_YES current_act_YES (48.8333)
+save_act_YES current_act_YES (53.1667)
