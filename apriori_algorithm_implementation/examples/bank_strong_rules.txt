@@ -1,0 +1,6 @@
+save_act_YES <- mortgage_YES children_0 pep_NO (10, 95)
+pep_NO <- mortgage_YES children_0 save_act_YES (10.3333, 91.9355)
+pep_NO <- children_0 sex_FEMALE married_YES save_act_YES (10.5, 90.4762)
+married_YES <- children_0 car_NO pep_NO mortgage_NO (10.3333, 96.7742)
+pep_NO <- children_0 car_NO married_YES save_act_YES (10.6667, 90.625)
+pep_NO <- children_0 mortgage_NO married_YES save_act_YES current_act_YES (10.1667, 93.4426)
