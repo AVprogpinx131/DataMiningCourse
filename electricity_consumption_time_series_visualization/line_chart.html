@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Average Hourly Consumption for a Selected Day</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <link rel="stylesheet" href="static/styles.css">
+    <style>
+        #line-chart-container {
+            overflow-x: auto;
+        }
+        .line {
+            fill: none;
+            stroke-width: 2px;
+            transition: stroke-width 0.2s, opacity 0.2s;
+        }
+        .dot {
+            fill-opacity: 0.7;
+            transition: r 0.2s;
+        }
+        .legend-container {
+            padding-top: 2em;
+        }
+        .legend {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px 20px;
+            max-width: 600px;
+            margin: 2em auto;
+        }
+        .legend-item {
+            display: flex;
+            flex-direction: row;
+            align-items: center;
+            margin: 5px 10px;
+            cursor: pointer;
+        }
+        .legend-item:hover {
+            font-weight: bold;
+        }
+        .legend-color {
+            width: 20px;
+            height: 20px;
+            margin-right: 5px;
+        }
+        .tooltip {
+            position: absolute;
+            background: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 5px;
+            border-radius: 5px;
+            pointer-events: none;
+            font-size: 12px;
+            z-index: 10;
+        }
+        .axis text {
+            font-size: 14px;
+        }
+        .axis path,
+        .axis line {
+            stroke: #000;
+            shape-rendering: crispEdges;
+        }
+        .day-selector {
+            margin: 10px 0;
+        }
+        .day-selector select {
+            padding: 8px 16px;
+            margin: 0 5px;
+            cursor: pointer;
+            background-color: #f0f0f0;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+        .average-line {
+            stroke: #666;
+            stroke-width: 1.5px;
+            stroke-dasharray: 5,5;
+        }
+    </style>
+</head>
+<body>
+    <div class="navbar">
+        <a href="index.html">Home</a>
+        <a href="heatmap.html">Daily Heatmap</a>
+        <a class="active" href="line_chart.html">Hourly Consumption</a>
+    </div>
+
+    <div class="content">
+        <h2>Average Hourly Consumption for a Selected Day</h2>
+        <div class="day-selector">
+            <label for="day-select">Select Day: </label>
+            <select id="day-select" style="outline: none;">
+                <option value="Sun">Sunday</option>
+                <option value="Mon" selected>Monday</option>
+                <option value="Tue">Tuesday</option>
+                <option value="Wed">Wednesday</option>
+                <option value="Thu">Thursday</option>
+                <option value="Fri">Friday</option>
+                <option value="Sat">Saturday</option>
+            </select>
+        </div>
+        <div id="line-chart-container">
+            <svg id="line-chart"></svg>
+        </div>
+        <div class="legend-container">
+            <p>Hover on the chart or legend to highlight a dataset</p>
+            <div class="legend" id="legend"></div>
+        </div>
+        <div class="tooltip"></div>
+    </div>
+    <script>
+        d3.json("data/avg_consumption.json").then(function(allData) {
+            // Chart setup
+            const margin = { top: 40, right: 80, bottom: 60, left: 60 };
+            const width = 800 - margin.left - margin.right;
+            const height = 400 - margin.top - margin.bottom;
+
+            const svg = d3.select("#line-chart")
+                .attr("width", width + margin.left + margin.right)
+                .attr("height", height + margin.top + margin.bottom)
+                .append("g")
+                .attr("transform", `translate(${margin.left},${margin.top})`);
+
+            const tooltip = d3.select(".tooltip");
+
+            // Scales
+            const x = d3.scaleLinear()
+                .domain([0, 23])
+                .range([0, width]);
+
+            const y = d3.scaleLinear()
+                .range([height, 0]);
+
+            // Color scale for datasets
+            const datasetColor = d3.scaleOrdinal(d3.schemeCategory10)
+                .domain(allData.map(d => d.dataset));
+
+            // Line generator - handle missing data more effectively
+            const line = d3.line()
+                .x(d => x(d.hour))
+                .y(d => y(d.Energy))
+                .defined(d => d.Energy !== null && d.Energy !== undefined && !isNaN(d.Energy) && d.Energy > 0);
+
+            // Function to highlight a dataset
+            function highlight(dataset) {
+                svg.selectAll(".line")
+                    .attr("opacity", d => d.dataset === dataset ? 1 : 0.2)
+                    .attr("stroke-width", d => d.dataset === dataset ? 4 : 2);
+                svg.selectAll(".dot")
+                    .attr("r", d => d.dataset === dataset ? 6 : 4)
+                    .attr("fill-opacity", d => d.dataset === dataset ? 1 : 0.2);
+            }
+
+            function resetHighlight() {
+                svg.selectAll(".line")
+                    .attr("opacity", 0.8)
+                    .attr("stroke-width", 2);
+                svg.selectAll(".dot")
+                    .attr("r", 4)
+                    .attr("fill-opacity", 0.7);
+            }
+
+            // Function to process the dataset for a specific day
+            function processDataForDay(selectedDay) {
+                return allData.map(dataset => {
+                    const dayData = dataset.data.find(d => d.day === selectedDay);
+                    
+                    // If no day data exists, create an empty array
+                    if (!dayData) {
+                        return {
+                            dataset: dataset.dataset,
+                            day: selectedDay,
+                            values: [],
+                            hasData: false
+                        };
+                    }
+                    
+                    // Clean and validate the values
+                    const validValues = dayData.values.map(v => ({
+                        hour: v.hour,
+                        Energy: typeof v.Energy === 'number' && !isNaN(v.Energy) ? v.Energy : 0
+                    }));
+                    
+                    return {
+                        dataset: dataset.dataset,
+                        day: selectedDay,
+                        values: validValues,
+                        hasData: validValues.some(v => v.Energy > 0)
+                    };
+                });
+            }
+
+            // Function to draw line chart for a specific day
+            function drawLineChart(selectedDay) {
+                // Process and filter data for the selected day
+                const processedData = processDataForDay(selectedDay);
+                const filteredData = processedData.filter(d => d.hasData);
+
+                // Update y-scale domain, ensuring 0 is included
+                const maxValues = filteredData.map(d => d3.max(d.values, v => v.Energy) || 0);
+                const maxEnergy = maxValues.length > 0 ? d3.max(maxValues) : 1;
+                y.domain([0, maxEnergy * 1.1]).nice(); // Add 10% padding at the top
+
+                // Clear previous chart elements
+                svg.selectAll(".line").remove();
+                svg.selectAll(".dot-group").remove();
+                svg.selectAll(".average-line").remove();
+
+                // Only draw lines for datasets with valid data
+                if (filteredData.length > 0) {
+                    // Draw lines
+                    svg.selectAll(".line")
+                        .data(filteredData)
+                        .enter()
+                        .append("path")
+                        .attr("class", "line")
+                        .attr("d", d => line(d.values))
+                        .attr("stroke", d => datasetColor(d.dataset))
+                        .attr("opacity", 0.8)
+                        .on("mouseover", function(event, d) {
+                            highlight(d.dataset);
+                            tooltip.style("display", "block")
+                                .style("left", (event.pageX + 10) + "px")
+                                .style("top", (event.pageY - 28) + "px")
+                                .html(`Dataset: ${d.dataset}<br>Day: ${d.day}`);
+                        })
+                        .on("mouseout", function() {
+                            resetHighlight();
+                            tooltip.style("display", "none");
+                        });
+
+                    // Draw dots only for points with Energy > 0
+                    svg.selectAll(".dot-group")
+                        .data(filteredData)
+                        .enter()
+                        .append("g")
+                        .attr("class", "dot-group")
+                        .selectAll(".dot")
+                        .data(d => d.values
+                            .filter(v => v.Energy > 0)
+                            .map(v => ({ ...v, dataset: d.dataset, day: d.day }))
+                        )
+                        .enter()
+                        .append("circle")
+                        .attr("class", "dot")
+                        .attr("cx", d => x(d.hour))
+                        .attr("cy", d => y(d.Energy))
+                        .attr("r", 4)
+                        .attr("fill", d => datasetColor(d.dataset))
+                        .on("mouseover", function(event, d) {
+                            highlight(d.dataset);
+                            tooltip.style("display", "block")
+                                .style("left", (event.pageX + 10) + "px")
+                                .style("top", (event.pageY - 28) + "px")
+                                .html(`Dataset: ${d.dataset}<br>Day: ${d.day}<br>Hour: ${d.hour}<br>Energy: ${d.Energy.toFixed(2)} kWh`);
+                        })
+                        .on("mouseout", function() {
+                            resetHighlight();
+                            tooltip.style("display", "none");
+                        });
+
+                    // Calculate hourly averages
+                    const hourlyAverages = [];
+                    for (let hour = 0; hour <= 23; hour++) {
+                        const valuesAtHour = filteredData
+                            .map(d => {
+                                const hourValue = d.values.find(v => v.hour === hour);
+                                return hourValue && hourValue.Energy > 0 ? hourValue.Energy : null;
+                            })
+                            .filter(v => v !== null && v !== undefined && !isNaN(v));
+                        
+                        if (valuesAtHour.length > 0) {
+                            hourlyAverages.push({
+                                hour,
+                                average: d3.mean(valuesAtHour)
+                            });
+                        }
+                    }
+
+                    // Draw average line only if we have enough data points
+                    if (hourlyAverages.length > 1) {
+                        svg.append("path")
+                            .datum(hourlyAverages)
+                            .attr("class", "average-line")
+                            .attr("d", d3.line()
+                                .x(d => x(d.hour))
+                                .y(d => y(d.average))
+                                .defined(d => d.average !== null && !isNaN(d.average))
+                            )
+                            .on("mouseover", function(event) {
+                                tooltip.style("display", "block")
+                                    .style("left", (event.pageX + 10) + "px")
+                                    .style("top", (event.pageY - 28) + "px")
+                                    .html(`Average across all datasets`);
+                            })
+                            .on("mouseout", function() {
+                                tooltip.style("display", "none");
+                            });
+                    }
+                } else {
+                    // Display no data message
+                    svg.append("text")
+                        .attr("x", width / 2)
+                        .attr("y", height / 2)
+                        .attr("text-anchor", "middle")
+                        .text(`No data available for ${selectedDay}`);
+                }
+
+                // Update y-axis
+                svg.select(".y-axis").transition().call(d3.axisLeft(y));
+            }
+
+            // Add axes
+            svg.append("g")
+                .attr("class", "axis x-axis")
+                .attr("transform", `translate(0,${height})`)
+                .call(d3.axisBottom(x).ticks(24).tickFormat(d3.format("d")))
+                .selectAll("text")
+                .attr("dy", "1em");
+
+            svg.append("g")
+                .attr("class", "axis y-axis")
+                .call(d3.axisLeft(y))
+                .append("text")
+                .attr("fill", "#000")
+                .attr("transform", "rotate(-90)")
+                .attr("y", -50)
+                .attr("x", -height / 2)
+                .attr("dy", "1em")
+                .attr("text-anchor", "middle")
+                .text("Average Energy Consumption (kWh)");
+
+            svg.append("text")
+                .attr("x", width / 2)
+                .attr("y", height + 50)
+                .attr("text-anchor", "middle")
+                .text("Hour of Day");
+
+            // Initial draw (Monday)
+            drawLineChart("Mon");
+
+            // Update legend
+            function updateLegend(selectedDay) {
+                const processedData = processDataForDay(selectedDay);
+                
+                const legend = d3.select("#legend")
+                    .selectAll(".legend-item")
+                    .data(processedData);
+
+                legend.exit().remove();
+
+                const legendEnter = legend.enter()
+                    .append("div")
+                    .attr("class", "legend-item")
+                    .style("opacity", d => d.hasData ? 1 : 0.5)
+                    .on("mouseover", function(event, d) {
+                        if (d.hasData) {
+                            highlight(d.dataset);
+                        }
+                    })
+                    .on("mouseout", function() {
+                        resetHighlight();
+                    });
+
+                legendEnter.append("div")
+                    .attr("class", "legend-color")
+                    .style("background-color", d => datasetColor(d.dataset));
+
+                legendEnter.append("span")
+                    .text(d => d.dataset + (d.hasData ? "" : " (no data)"));
+
+                // Update existing legend items
+                legend.style("opacity", d => d.hasData ? 1 : 0.5)
+                    .select("span")
+                    .text(d => d.dataset + (d.hasData ? "" : " (no data)"));
+            }
+
+            // Initial legend
+            updateLegend("Mon");
+
+            // Handle day selection
+            d3.select("#day-select").on("change", function() {
+                const selectedDay = this.value;
+                drawLineChart(selectedDay);
+                updateLegend(selectedDay);
+            });
+        }).catch(function(error) {
+            console.log("Error loading the line chart data: " + error);
+            // Display error message on the page
+            d3.select("#line-chart-container").html("<p>Error loading data: " + error + "</p>");
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Daily Consumption Heatmap</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <link rel="stylesheet" href="static/styles.css">
+    <style>
+        #heatmap-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .day {
+            shape-rendering: crispEdges;
+        }
+        .legend-container {
+            display: flex;
+            width: 100%;
+            max-width: 800px;
+            justify-content: space-between;
+            align-items: center;
+            margin: 20px auto; 
+        }
+        .legend-text {
+            text-align: left;
+            margin-left: 20px;
+        }
+        .legend {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        .legend-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            margin: 0 10px;
+        }
+        .legend-color {
+            width: 25px;
+            height: 25px;
+            border: 1px solid #ccc;
+            margin-bottom: .5em;
+        }
+        .tooltip {
+            position: absolute;
+            background: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 5px;
+            border-radius: 5px;
+            pointer-events: none;
+            font-size: 12px;
+            z-index: 10;
+        }
+        .y-axis text {
+            font-size: 14px;
+        }
+        .filter-buttons {
+            margin: 20px 0;
+        }
+        .filter-buttons button {
+            padding: 8px 16px;
+            margin: 0 5px;
+            cursor: pointer;
+            background-color: #f0f0f0;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+        .filter-buttons button.active {
+            background-color: #4575b4;
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <div class="navbar">
+        <a href="index.html">Home</a>
+        <a class="active" href="heatmap.html">Daily Heatmap</a>
+        <a href="line_chart.html">Hourly Consumption</a>
+    </div>
+
+    <div class="content">
+        <h2>Daily Consumption Heatmap</h2>
+        <p style="padding-top: 2em;">Dataset: <b>c550bcace2429c281741504217</b></p>
+        <div class="filter-buttons">
+            <button class="season-filter active" data-season="all">All Seasons</button>
+            <button class="season-filter" data-season="winter">Winter</button>
+            <button class="season-filter" data-season="spring">Spring</button>
+            <button class="season-filter" data-season="summer">Summer</button>
+            <button class="season-filter" data-season="autumn">Autumn</button>
+        </div>
+        <div id="heatmap-container">
+            <svg id="heatmap"></svg>
+        </div>
+        <div class="legend-container">
+            <p class="legend-text">Hover on the heatmap to see details</p>
+            <div class="legend">
+                <div class="legend-item">
+                    <div class="legend-color" style="background-color: #d73027;"></div>
+                    <span>Low</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background-color: #ffffbf;"></div>
+                    <span>Medium</span>
+                </div>
+                <div class="legend-item">
+                    <div class="legend-color" style="background-color: #4575b4;"></div>
+                    <span>High</span>
+                </div>
+            </div>
+        </div>
+        <div class="tooltip"></div>
+    </div>
+
+    <script>
+        d3.dsv(";", "datasets/c550bcace2429c281741504217.csv").then(function(data) {
+            // Data Cleaning and Preparation
+            let cleanedData = data.slice(4).map(d => ({
+                Periood: d["Periood"] || Object.values(d)[0],
+                Energy: d["Tarbitud energia (võrgust) / kWh"] || Object.values(d)[1]
+            }));
+
+            const parseTime = d3.timeParse("%d.%m.%Y %H:%M");
+
+            cleanedData.forEach(d => {
+                d.datetime = parseTime(d.Periood);
+                d.date = d.datetime ? d3.timeDay(d.datetime) : null;
+                d.energy = d.Energy ? +d.Energy.replace(",", ".") : 0;
+            });
+
+            // Filter out rows with invalid dates
+            cleanedData = cleanedData.filter(d => d.datetime && d.date);
+
+            const dailyData = d3.rollup(
+                cleanedData,
+                v => d3.sum(v, d => d.energy),
+                d => d.date
+            );
+
+            let dailyDataArray = Array.from(dailyData, ([date, energy]) => ({ date, energy }));
+
+            // Chart setup
+            const cellSize = 25;
+            const margin = { top: 40, right: 20, bottom: 20, left: 100 };
+            const svg = d3.select("#heatmap");
+            const width = cellSize * 53 + margin.left + margin.right;
+            const height = cellSize * 7 + margin.top + margin.bottom;
+
+            // Set the SVG dimensions
+            svg.attr("width", width).attr("height", height);
+
+            // Function to determine season
+            function getSeason(date) {
+                const month = date.getMonth();
+                if (month === 11 || month <= 1) return 'winter';
+                if (month >= 2 && month <= 4) return 'spring';
+                if (month >= 5 && month <= 7) return 'summer';
+                if (month >= 8 && month <= 10) return 'autumn';
+            }
+
+            // Function to update heatmap
+            function updateHeatmap(season) {
+                let filteredData = season === 'all' 
+                    ? dailyDataArray 
+                    : dailyDataArray.filter(d => getSeason(d.date) === season);
+
+                const startDate = d3.min(dailyDataArray, d => d.date);
+                const endDate = d3.max(dailyDataArray, d => d.date);
+
+                svg.selectAll("*").remove();
+
+                const colorScale = d3.scaleSequential(d3.interpolateRdYlBu)
+                    .domain([d3.min(dailyDataArray, d => d.energy), d3.max(dailyDataArray, d => d.energy)]);
+
+                const years = svg.selectAll(".year")
+                    .data(d3.timeYears(startDate, d3.timeDay.offset(endDate, 1)))
+                    .enter()
+                    .append("g")
+                    .attr("transform", (d, i) => `translate(${margin.left + i * (cellSize * 53)},${margin.top})`);
+
+                years.selectAll(".day")
+                    .data(d => Array.from(d3.timeDays(new Date(d.getFullYear(), 0, 1), new Date(d.getFullYear() + 1, 0, 1))))
+                    .enter()
+                    .append("rect")
+                    .attr("class", "day")
+                    .attr("width", cellSize)
+                    .attr("height", cellSize)
+                    .attr("x", (d) => (d3.timeWeek.count(d3.timeYear(d), d)) * cellSize)
+                    .attr("y", (d) => (d.getDay()) * cellSize)
+                    .datum(d => ({
+                        date: d,
+                        energy: dailyData.get(d) || 0,
+                        season: getSeason(d)
+                    }))
+                    .attr("fill", d => {
+                        if (season === 'all') return colorScale(d.energy);
+                        return d.season === season ? colorScale(d.energy) : '#eee';
+                    })
+                    .on("mouseover", function(event, d) {
+                        if (season === 'all' || d.season === season) {
+                            d3.select(".tooltip")
+                                .style("display", "block")
+                                .style("left", (event.pageX + 10) + "px")
+                                .style("top", (event.pageY - 28) + "px")
+                                .html(`Date: ${d.date.toLocaleDateString()}<br>Energy: ${d.energy.toFixed(2)} kWh`);
+                            d3.select(this).attr("stroke", "#000").attr("stroke-width", 2);
+                        }
+                    })
+                    .on("mouseout", function() {
+                        d3.select(".tooltip").style("display", "none");
+                        d3.select(this).attr("stroke", null);
+                    });
+
+                // Add day labels
+                const dayLabels = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+                svg.append("g")
+                    .attr("class", "y-axis")
+                    .attr("transform", `translate(${margin.left - 10}, ${margin.top})`)
+                    .selectAll(".tick")
+                    .data(dayLabels)
+                    .enter()
+                    .append("text")
+                    .attr("class", "tick")
+                    .attr("x", -5)
+                    .attr("y", (d, i) => i * cellSize + cellSize / 2)
+                    .attr("dy", "0.32em")
+                    .attr("text-anchor", "end")
+                    .text(d => d);
+
+                // Add month labels above the heatmap
+                const monthLabels = svg.selectAll(".month-label")
+                    .data(d3.timeMonths(startDate, d3.timeDay.offset(endDate, 1)))
+                    .enter()
+                    .append("text")
+                    .attr("class", "month-label")
+                    .attr("x", d => {
+                        const weekOfYear = d3.timeWeek.count(d3.timeYear(d), d);
+                        return margin.left + weekOfYear * cellSize + cellSize / 2;
+                    })
+                    .attr("y", margin.top - 10)
+                    .attr("text-anchor", "middle")
+                    .attr("font-size", "12px")
+                    .text(d => d3.timeFormat("%b")(d));
+            }
+
+            // Initial render
+            updateHeatmap('all');
+
+            // Filter button handling
+            d3.selectAll(".season-filter").on("click", function() {
+                d3.selectAll(".season-filter").classed("active", false);
+                d3.select(this).classed("active", true);
+                const season = this.getAttribute("data-season");
+                updateHeatmap(season);
+            });
+        }).catch(function(error) {
+            console.log("Error loading the heatmap data: " + error);
+        });
+    </script>
+</body>
+</html>
