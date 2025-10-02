@@ -1,6 +1,6 @@
 """Utility functions shared between main.py and web_app.py."""
 
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Optional
 
 
@@ -60,18 +60,45 @@ def parse_timestamp_to_utc(timestamp_str: str) -> Optional[datetime]:
     return None
 
 
-def format_local_time(dt: datetime) -> str:
-    """Format UTC datetime to Estonia local time string.
-
-    Args:
-        dt: UTC datetime object
-
-    Returns:
-        Formatted time string in Europe/Tallinn timezone
-    """
+def format_local_time(dt_utc, target_tz='Europe/Tallinn'):
+    """Format UTC datetime to Estonia local time string with timezone label."""
     try:
         from zoneinfo import ZoneInfo
-        local_dt = dt.astimezone(ZoneInfo('Europe/Tallinn'))
-        return local_dt.strftime('%Y-%m-%d %H:%M')
+        tz = ZoneInfo(target_tz)
+        local_dt = dt_utc.astimezone(tz)
+        # Add timezone abbreviation for clarity
+        tz_name = local_dt.strftime('%Z')  # EET or EEST
+        return f"{local_dt.strftime('%Y-%m-%d %H:%M')} {tz_name}"
     except Exception:
-        return dt.strftime('%Y-%m-%d %H:%M')
+        # Robust fallback: Calculate Estonia time manually
+        # Estonia is UTC+2 (winter) or UTC+3 (summer)
+        # DST: Last Sunday in March to last Sunday in October
+
+        year = dt_utc.year
+
+        # Calculate DST boundaries for the year
+        # Last Sunday in March
+        march_last_sunday = 31
+        while datetime(year, 3, march_last_sunday).weekday() != 6:
+            march_last_sunday -= 1
+
+        # Last Sunday in October
+        oct_last_sunday = 31
+        while datetime(year, 10, oct_last_sunday).weekday() != 6:
+            oct_last_sunday -= 1
+
+        dst_start = datetime(year, 3, march_last_sunday,
+                             1, 0, 0, tzinfo=timezone.utc)
+        dst_end = datetime(year, 10, oct_last_sunday,
+                           1, 0, 0, tzinfo=timezone.utc)
+
+        # Determine if we're in DST
+        if dst_start <= dt_utc < dst_end:
+            offset_hours = 3  # EEST (UTC+3)
+            tz_name = "EEST"
+        else:
+            offset_hours = 2  # EET (UTC+2)
+            tz_name = "EET"
+
+        local_dt = dt_utc + timedelta(hours=offset_hours)
+        return f"{local_dt.strftime('%Y-%m-%d %H:%M')} {tz_name}"

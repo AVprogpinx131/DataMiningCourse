@@ -170,15 +170,15 @@ def run():
         start_local = start_dt.astimezone(estonia_tz)
         end_local = end_dt.astimezone(estonia_tz)
 
-        delivery_period = f"Prices for delivery date {date_for_day}: {start_local.strftime('%Y-%m-%d %H:%M')} to {end_local.strftime('%Y-%m-%d %H:%M')} (Europe/Tallinn)"
+        # The delivery period is for the requested date (local time 00:00 to 23:45)
+        # Show this correctly instead of confusing UTC-based times
+        delivery_date_obj = datetime.strptime(date_for_day, '%Y-%m-%d').date()
+        end_date_local = delivery_date_obj  # Same day, not next day
+
+        delivery_period = f"Prices for delivery date {date_for_day}: {delivery_date_obj.strftime('%Y-%m-%d')} 00:00 to {end_date_local.strftime('%Y-%m-%d')} 23:45 (Europe/Tallinn)"
     except Exception:
-        # Fallback: show UTC times with explanation
-        try:
-            start_dt = datetime.fromisoformat(start_iso.replace('Z', '+00:00'))
-            end_dt = datetime.fromisoformat(end_iso.replace('Z', '+00:00'))
-            delivery_period = f"Prices for delivery date {date_for_day}: {start_dt.strftime('%Y-%m-%d %H:%M')} to {end_dt.strftime('%Y-%m-%d %H:%M')} (UTC)"
-        except Exception:
-            delivery_period = f"Prices for delivery date {date_for_day}"
+        # Fallback: show the requested date clearly
+        delivery_period = f"Prices for delivery date {date_for_day}: 24-hour period (Europe/Tallinn)"
 
     result = {
         'delivery_date': date_for_day,
